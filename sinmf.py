@@ -28,12 +28,12 @@ class SINMF(object):
         
     def reconstruct(self, A, D):
 
-        N, F = A.shape[1], D.shape[2]
+        N_timesteps = A.shape[1]
 
-        X_bar = np.zeros((N, F))
+        X_bar = np.zeros((N_timesteps, N_features))
 
         for basis, activation in zip(D, A):
-            X_bar += scipy.signal.fftconvolve(basis.T, np.atleast_2d(activation)).T[:N]
+            X_bar += scipy.signal.fftconvolve(basis.T, np.atleast_2d(activation)).T[:N_timesteps]
 
         return X_bar
 
