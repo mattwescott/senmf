@@ -2,19 +2,20 @@ import numpy as np
 
 import scipy.signal
 
+
 class SINMF(object):
     
     def __init__(self, n_bases, window_width, n_iter):
         
         self.n_iter = n_iter
         self.window_width = window_width
-        self.n_bases = n_bases    
-                
+        self.n_bases = n_bases                
         
     def fit(self, X):
         
         N_timesteps, N_features = X.shape
         
+        # Initialize in a super naive way
         A = np.random.random((self.n_bases, N_timesteps))+2
         D = np.random.random((self.n_bases, self.window_width, N_features))+2
         
@@ -24,7 +25,6 @@ class SINMF(object):
             self._update_dictionary(A, D, X)
         
         return A, D
-        
         
     def reconstruct(self, A, D):
 
@@ -36,13 +36,10 @@ class SINMF(object):
             X_bar += scipy.signal.fftconvolve(basis.T, np.atleast_2d(activation)).T[:N]
 
         return X_bar
-  
-    
+
     def _update_activations(self, A, D, X):
     
-        W = D.shape[1]
-
-        for t_prime in range(W):
+        for t_prime in range(self.window_width):
 
             X_bar = self.reconstruct(A, D)
             R = X/X_bar
@@ -51,12 +48,9 @@ class SINMF(object):
 
             A[:,:-t_prime or None] *= U_A
 
-    
     def _update_dictionary(self, A, D, X):
     
-        W = D.shape[1]
-
-        for t_prime in range(W):
+        for t_prime in range(self.window_width):
 
             X_bar = self.reconstruct(A, D)
             R = X/X_bar
