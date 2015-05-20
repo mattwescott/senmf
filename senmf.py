@@ -2,59 +2,83 @@ import numpy as np
 
 import scipy.signal
 
-
-class SINMF(object):
-    
-    def __init__(self, n_bases, window_width, n_iter):
-        
-        self.n_iter = n_iter
+class SENMF(object):
+    def __init__(self, n_bases, window_width, X):
+        self.n_bases = n_bases
         self.window_width = window_width
-        self.n_bases = n_bases                
-        
-    def fit(self, X):
-        
-        N_timesteps, N_features = X.shape
-        
-        # Initialize in a super naive way
-        A = np.random.random((self.n_bases, N_timesteps))+2
-        D = np.random.random((self.n_bases, self.window_width, N_features))+2
-        
-        for _ in range(self.n_iter):
-    
-            self._update_activations(A, D, X)
-            self._update_dictionary(A, D, X)
-        
-        return A, D
-        
-    def reconstruct(self, A, D):
+        self.n_timesteps, self.n_features = X.shape
+        self.X = X
+        self.A = None
+        self.D = None
+        self.R = None
 
-        N_timesteps = A.shape[1]
+    def rand_A(self, seed=None):
+        if seed is not None:
+            np.random.seed(seed)
+        self.A = np.random.random((self.n_bases, self.n_timesteps))+2
+        return self.A
 
-        X_bar = np.zeros((N_timesteps, N_features))
+    def rand_D(self, seed=None):
+        if seed is not None:
+            np.random.seed(seed)
+        self.D = np.random.random((self.n_bases, self.window_width, self.n_features))+2
+        return self.D
 
-        for basis, activation in zip(D, A):
-            X_bar += scipy.signal.fftconvolve(basis.T, np.atleast_2d(activation)).T[:N_timesteps]
+    def normalize_D(self):
+        for i in range(self.n_bases):
+            self.D[i] /= np.linalg.norm(self.D[i])
 
+    def reconstruct(self):
+        "Reconstruct an estimation of the training data"
+        X_bar = np.zeros((self.n_timesteps, self.n_features))
+        for basis, activation in zip(self.D, self.A):
+            X_bar += scipy.signal.fftconvolve(basis.T, np.atleast_2d(activation)).T[:self.n_timesteps]
         return X_bar
 
-    def _update_activations(self, A, D, X):
-    
+    def reconstruct_basis(self, basis):
+        return scipy.signal.fftconvolve(self.D[basis].T, np.atleast_2d(self.A[basis]))
+
+    def residual(self):
+        "calculate the multiplicative residual error"
+        return self.X / np.abs(self.reconstruct())
+
+    def update_residual(self):
+        "calc and store residual for future use"
+        self.R = self.residual()
+
+    def update_A(self):
+        "Using stored residual, calculate and apply an update to activations"
         for t_prime in range(self.window_width):
+            U_A = np.einsum(
+                    "jk,tk->jt",
+                    self.D[:,t_prime,:]/np.atleast_2d(self.D[:,t_prime,:].sum(axis=1)).T,
+                    self.R[t_prime:])
+            self.A[:,:-t_prime or None] *= U_A
 
-            X_bar = self.reconstruct(A, D)
-            R = X/X_bar
-
-            U_A = np.einsum("jk,tk->jt", D[:,t_prime,:]/np.atleast_2d(D[:,t_prime,:].sum(axis=1)).T, R[t_prime:]) 
-
-            A[:,:-t_prime or None] *= U_A
-
-    def _update_dictionary(self, A, D, X):
-    
+    def update_A_fast(self):
+        "Using stored residual, calculate and apply an update to activations"
         for t_prime in range(self.window_width):
+            self.update_residual()
+            U_A = np.einsum(
+                    "jk,tk->jt",
+                    self.D[:,t_prime,:]/np.atleast_2d(self.D[:,t_prime,:].sum(axis=1)).T,
+                    self.R[t_prime:])
+            self.A[:,:-t_prime or None] *= U_A
 
-            X_bar = self.reconstruct(A, D)
-            R = X/X_bar
+    def D_delta(self):
+        D_updates = np.zeros((self.n_bases, self.window_width, self.n_features))
+        for t_prime in range(self.window_width):
+            U_D = np.einsum("jn,ni->ji", self.A[:,:-t_prime or None]/np.atleast_2d(self.A[:,:-t_prime or None].sum(axis=1)).T, self.R[t_prime:])
+            D_updates[:,t_prime,:] = U_D
+        return D_updates
 
-            U_D = np.einsum("jn,ni->ji", A[:,:-t_prime or None]/np.atleast_2d(A[:,:-t_prime or None].sum(axis=1)).T, R[t_prime:])
+    def update_D(self):
+        "Using stored residual, calculate and apply an update to dictionary"
+        self.D *= self.D_delta()
 
-            D[:,t_prime,:] *= U_D
+    def fit(self, n_iter):
+        for _ in range(n_iter):
+            self.update_A_fast()
+            self.update_residual()
+            self.update_D()
+
