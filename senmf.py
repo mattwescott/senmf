@@ -59,16 +59,19 @@ class SENMF(object):
         "Using stored residual, calculate and apply an update to activations"
         for t_prime in range(self.window_width):
             self.update_residual()
-            U_A = np.einsum(
-                    "jk,tk->jt",
-                    self.D[:,t_prime,:]/np.atleast_2d(self.D[:,t_prime,:].sum(axis=1)).T,
-                    self.R[t_prime:])
+            U_A = np.dot(
+                self.D[:,t_prime,:]/np.atleast_2d(self.D[:,t_prime,:].sum(axis=1)).T,
+                self.R[t_prime:].T
+            )
             self.A[:,:-t_prime or None] *= U_A
 
     def D_delta(self):
         D_updates = np.zeros((self.n_bases, self.window_width, self.n_features))
         for t_prime in range(self.window_width):
-            U_D = np.einsum("jn,ni->ji", self.A[:,:-t_prime or None]/np.atleast_2d(self.A[:,:-t_prime or None].sum(axis=1)).T, self.R[t_prime:])
+            U_D = np.dot(
+                self.A[:,:-t_prime or None]/np.atleast_2d(self.A[:,:-t_prime or None].sum(axis=1)).T,
+                self.R[t_prime:]
+            )
             D_updates[:,t_prime,:] = U_D
         return D_updates
 
